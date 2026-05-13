@@ -89,19 +89,28 @@ jobs:
             [One sentence overview]
 
             ## Issues
-            Group by file. Use bullet points. Format: **Line X** - [Issue] - [Description]
+            Group by file. For each issue, include the problematic code snippet in a code block.
+            Format:
+            ### src/file.ts
+            - **Line X** - [Issue Type] - [Description]
+              \`\`\`
+              [Problematic code snippet]
+              \`\`\`
+
             Example:
             ### src/file.ts
             - **Line 10** - Security - SQL injection vulnerability
-            - **Line 25** - Performance - Inefficient loop
+              \`\`\`
+              const query = "SELECT * FROM users WHERE id = " + userId;
+              \`\`\`
 
             ## Positive
-            Group by file. Use bullet points. Format: **Line X** - [Description]
+            Group by file. Use bullet points.
             Example:
             ### src/component.ts
             - **Line 5** - Clean component structure
 
-            Keep it concise. Only list actual critical issues. Skip minor nitpicks.
+            Keep it concise. Only list actual critical issues. Include code snippets for clarity.
             `;
 
             // Retry logic with exponential backoff
