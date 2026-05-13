@@ -1,158 +1,179 @@
-- name: Generate AI PR Description
-  uses: actions/github-script@v7
-  env:
-    GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-    FILES: ${{ steps.changed-files.outputs.all_changed_files }}
-  with:
-    script: |
-      const fs = require('fs');
+name: Generate AI PR Description
 
-      const changedFiles = process.env.FILES
-        .split(' ')
-        .filter(Boolean)
-        .slice(0, 50);
+on:
+  pull_request:
+    types: [opened, synchronize]
 
-      let fileContents = '';
-      let fileChangesSection = '';
+permissions:
+  contents: read
+  pull-requests: write
 
-      for (const file of changedFiles) {
-        try {
-          const content = fs.readFileSync(file, 'utf8');
+jobs:
+  generate-pr-description:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-          fileContents += `
-          ====================================
-          FILE: ${file}
-          ====================================
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v45
 
-          ${content.substring(0, 2500)}
-          `;
+      - name: Generate AI PR Description
+        uses: actions/github-script@v7
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+        with:
+          script: |
+            const fs = require('fs');
 
-          fileChangesSection += `- \`${file}\`\n`;
+            const changedFiles = process.env.FILES
+              .split(' ')
+              .filter(Boolean)
+              .slice(0, 50);
 
-        } catch (e) {
-          console.log(`Skipping unreadable file: ${file}`);
-        }
-      }
+            let fileContents = '';
+            let fileChangesSection = '';
 
-      const prompt = `
-      You are a senior software engineer.
+            for (const file of changedFiles) {
+              try {
+                const content = fs.readFileSync(file, 'utf8');
 
-      Generate a professional GitHub Pull Request description.
+                fileContents += `
+                ====================================
+                FILE: ${file}
+                ====================================
 
-      STRICT RULES:
-      - Output VALID markdown only
-      - DO NOT wrap content inside HTML comments
-      - DO NOT use <!-- -->
-      - KEEP the exact section order
-      - KEEP checklist sections unchanged
-      - Generate realistic technical explanations
-      - File changes MUST be generated from changed files
-      - Explain what changed per file
-      - Detect breaking changes automatically
-      - Generate testing steps
-      - Generate side effects if applicable
-      - Use professional engineering language
-      - Be concise but informative
+                ${content.substring(0, 2500)}
+                `;
 
-      REQUIRED FORMAT:
+                fileChangesSection += `- \`${file}\`\n`;
 
-      ## 📝 Summary
-
-      Short summary here
-
-      ## 🗃️ File Changes
-
-      - \`file-name.ts\` - explanation
-      - \`another-file.ts\` - explanation
-
-      ## 🌊 Changes
-
-      - Change 1
-      - Change 2
-
-      ## 💥 Breaking Changes
-
-      - Breaking change here
-
-      ## ✍️ How To Test
-
-      1. Step 1
-      2. Step 2
-
-      ## 🌳 Side Effects
-
-      - Side effect
-
-      ## 📷 Screenshots or Records
-
-      ## 💻 BE Dependencies
-
-      - Dependency here
-
-      ## ✅ PR Checklist
-      - [ ] Title uses UniPin format
-      - [ ] Assign mentor, product owner, and leads as PR reviewer
-      - [ ] Assign yourself as assignee
-      - [ ] Choose the matching labels with the related issue(s)
-      - [ ] Connect related issue(s) to this PR
-      - [ ] Write PR description that match with the template
-      - [ ] Assign PR to the related milestone **(if applicable)**
-      - [ ] Fill in sprint information for this PR
-      - [ ] Move this PR to "Code Review" list inside project board
-      - [ ] Move correspondent issue(s), to code review status inside project board
-
-      ## ✅ Review Checklist
-      - [ ] Feature works correctly
-      - [ ] Loading state works
-      - [ ] Permissions work correctly
-
-      CHANGED FILES:
-      ${changedFiles.join('\n')}
-
-      FILE CONTENTS:
-      ${fileContents}
-      `;
-
-      const response = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + process.env.GEMINI_API_KEY,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: prompt
-                  }
-                ]
+              } catch (e) {
+                console.log(`Skipping unreadable file: ${file}`);
               }
-            ],
-            generationConfig: {
-              temperature: 0.2,
-              topP: 0.9,
-              topK: 20,
-              maxOutputTokens: 4096
             }
-          })
-        }
-      );
 
-      const data = await response.json();
+            const prompt = `
+            You are a senior software engineer.
 
-      if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        console.log(JSON.stringify(data, null, 2));
-        throw new Error('Invalid Gemini response');
-      }
+            Generate a professional GitHub Pull Request description.
 
-      const generatedPR =
-        data.candidates[0].content.parts[0].text;
+            STRICT RULES:
+            - Output VALID markdown only
+            - DO NOT wrap content inside HTML comments
+            - DO NOT use <!-- -->
+            - KEEP the exact section order
+            - KEEP checklist sections unchanged
+            - Generate realistic technical explanations
+            - File changes MUST be generated from changed files
+            - Explain what changed per file
+            - Detect breaking changes automatically
+            - Generate testing steps
+            - Generate side effects if applicable
+            - Use professional engineering language
+            - Be concise but informative
 
-      await github.rest.pulls.update({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        pull_number: context.payload.pull_request.number,
-        body: generatedPR
-      });
+            REQUIRED FORMAT:
+
+            ## 📝 Summary
+
+            Short summary here
+
+            ## 🗃️ File Changes
+
+            - \`file-name.ts\` - explanation
+            - \`another-file.ts\` - explanation
+
+            ## 🌊 Changes
+
+            - Change 1
+            - Change 2
+
+            ## 💥 Breaking Changes
+
+            - Breaking change here
+
+            ## ✍️ How To Test
+
+            1. Step 1
+            2. Step 2
+
+            ## 🌳 Side Effects
+
+            - Side effect
+
+            ## 📷 Screenshots or Records
+
+            ## 💻 BE Dependencies
+
+            - Dependency here
+
+            ## ✅ PR Checklist
+            - [ ] Title uses UniPin format
+            - [ ] Assign mentor, product owner, and leads as PR reviewer
+            - [ ] Assign yourself as assignee
+            - [ ] Choose the matching labels with the related issue(s)
+            - [ ] Connect related issue(s) to this PR
+            - [ ] Write PR description that match with the template
+            - [ ] Assign PR to the related milestone **(if applicable)**
+            - [ ] Fill in sprint information for this PR
+            - [ ] Move this PR to "Code Review" list inside project board
+            - [ ] Move correspondent issue(s), to code review status inside project board
+
+            ## ✅ Review Checklist
+            - [ ] Feature works correctly
+            - [ ] Loading state works
+            - [ ] Permissions work correctly
+
+            CHANGED FILES:
+            ${changedFiles.join('\n')}
+
+            FILE CONTENTS:
+            ${fileContents}
+            `;
+
+            const response = await fetch(
+              'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + process.env.GEMINI_API_KEY,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  contents: [
+                    {
+                      parts: [
+                        {
+                          text: prompt
+                        }
+                      ]
+                    }
+                  ],
+                  generationConfig: {
+                    temperature: 0.2,
+                    topP: 0.9,
+                    topK: 20,
+                    maxOutputTokens: 4096
+                  }
+                })
+              }
+            );
+
+            const data = await response.json();
+
+            if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+              console.log(JSON.stringify(data, null, 2));
+              throw new Error('Invalid Gemini response');
+            }
+
+            const generatedPR =
+              data.candidates[0].content.parts[0].text;
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              body: generatedPR
+            });
