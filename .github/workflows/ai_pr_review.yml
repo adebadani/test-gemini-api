@@ -89,14 +89,19 @@ jobs:
             [One sentence overview]
 
             ## Issues
-            [File:Line] - [Issue Type] - [Brief description]
-            Example: src/file.ts:10 - Security - SQL injection vulnerability
+            Group by file. Use bullet points. Format: **Line X** - [Issue] - [Description]
+            Example:
+            ### src/file.ts
+            - **Line 10** - Security - SQL injection vulnerability
+            - **Line 25** - Performance - Inefficient loop
 
             ## Positive
-            [File:Line] - [Brief praise]
-            Example: src/component.ts:5 - Clean component structure
+            Group by file. Use bullet points. Format: **Line X** - [Description]
+            Example:
+            ### src/component.ts
+            - **Line 5** - Clean component structure
 
-            Keep it concise. Only list actual issues, not theoretical concerns.
+            Keep it concise. Only list actual critical issues. Skip minor nitpicks.
             `;
 
             // Retry logic with exponential backoff
