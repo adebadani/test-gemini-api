@@ -72,27 +72,11 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${context.payload.pull_request?.number || context.payload.issue?.number || 'N/A'}
 
-            Perform a comprehensive code review with the following focus areas:
-
-            1. **Code Quality**
-               - Clean code principles and best practices
-               - Proper error handling and edge cases
-               - Code readability and maintainability
-
-            2. **Security**
-               - Check for potential security vulnerabilities
-               - Validate input sanitization
-               - Review authentication/authorization logic
-
-            3. **Performance**
-               - Identify potential performance bottlenecks
-               - Review database queries for efficiency
-               - Check for memory leaks or resource issues
-
-            4. **Testing**
-               - Verify adequate test coverage
-               - Review test quality and edge cases
-               - Check for missing test scenarios
+            Perform a code review. Focus on:
+            1. Code Quality (best practices, error handling, readability)
+            2. Security (vulnerabilities, input sanitization, auth)
+            3. Performance (bottlenecks, efficiency, memory leaks)
+            4. Testing (coverage, edge cases)
 
             CHANGED FILES:
             ${changedFiles.join('\n')}
@@ -100,8 +84,19 @@ jobs:
             FILE CONTENTS:
             ${fileContents}
 
-            Provide detailed feedback using inline comments for specific issues.
-            Use top-level comments for general observations or praise.
+            OUTPUT FORMAT (strict):
+            ## Summary
+            [One sentence overview]
+
+            ## Issues
+            [File:Line] - [Issue Type] - [Brief description]
+            Example: src/file.ts:10 - Security - SQL injection vulnerability
+
+            ## Positive
+            [File:Line] - [Brief praise]
+            Example: src/component.ts:5 - Clean component structure
+
+            Keep it concise. Only list actual issues, not theoretical concerns.
             `;
 
             // Retry logic with exponential backoff
