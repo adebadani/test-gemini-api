@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Get changed files
         id: changed-files
@@ -67,9 +69,10 @@ jobs:
             }
 
             const prompt = `
-            You are a senior software engineer performing a comprehensive code review.
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${context.payload.pull_request?.number || context.payload.issue?.number || 'N/A'}
 
-            Perform a code review with the following focus areas:
+            Perform a comprehensive code review with the following focus areas:
 
             1. **Code Quality**
                - Clean code principles and best practices
@@ -97,9 +100,8 @@ jobs:
             FILE CONTENTS:
             ${fileContents}
 
-            IMPORTANT: Provide your review as a single markdown comment. Be specific and constructive.
-            Start with a brief summary, then list issues found (if any) with specific file paths and line numbers when possible.
-            End with any positive observations or suggestions.
+            Provide detailed feedback using inline comments for specific issues.
+            Use top-level comments for general observations or praise.
             `;
 
             // Retry logic with exponential backoff
