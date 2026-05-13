@@ -181,11 +181,21 @@ jobs:
 
             // Determine PR number based on event type
             let prNumber;
-            if (github.event_name === 'pull_request' || github.event_name === 'pull_request_review') {
-              prNumber = context.payload.pull_request.number;
-            } else if (github.event_name === 'issue_comment' && context.payload.issue.pull_request) {
-              prNumber = context.payload.issue.number;
+            console.log('Event name:', github.event_name);
+            console.log('Payload keys:', Object.keys(context.payload));
+
+            if (github.event_name === 'pull_request') {
+              prNumber = context.payload.pull_request?.number;
+            } else if (github.event_name === 'pull_request_review') {
+              prNumber = context.payload.pull_request?.number;
+            } else if (github.event_name === 'issue_comment') {
+              // Check if this comment is on a PR
+              if (context.payload.issue?.pull_request) {
+                prNumber = context.payload.issue.number;
+              }
             }
+
+            console.log('Determined PR number:', prNumber);
 
             // Post the review as a comment
             if (prNumber) {
