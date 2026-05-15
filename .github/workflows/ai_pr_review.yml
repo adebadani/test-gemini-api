@@ -98,7 +98,6 @@ jobs:
             OUTPUT FORMAT (strict JSON):
             Return ONLY valid JSON with this structure:
             {
-              "summary": "One sentence overview of the PR quality",
               "issues": [
                 {
                   "file": "src/file.ts",
@@ -106,13 +105,6 @@ jobs:
                   "type": "Security",
                   "description": "SQL injection vulnerability",
                   "code_snippet": "const query = \"SELECT * FROM users WHERE id = \" + userId;"
-                }
-              ],
-              "positives": [
-                {
-                  "file": "src/component.ts",
-                  "line": 5,
-                  "description": "Clean component structure"
                 }
               ]
             }
@@ -276,9 +268,7 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: prNumber,
                 commit_id: commitId,
-                body: `## Summary\n\n${reviewData.summary || 'No summary provided.'}\n\n## Positive\n\n${reviewData.positives && reviewData.positives.length > 0 
-                  ? reviewData.positives.map(p => `**${p.file}** - Line ${p.line}: ${p.description}`).join('\n')
-                  : 'No positive notes.'}`,
+                body: '',
                 comments: comments,
                 event: comments.length > 0 ? 'REQUEST_CHANGES' : 'COMMENT'
               });
