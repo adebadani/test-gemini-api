@@ -86,20 +86,19 @@ jobs:
             FILE DIFFS:
             ${fileDiffs}
 
-            OUTPUT FORMAT (strict JSON):
+            You MUST respond with ONLY a JSON object. No other text, no markdown formatting, no explanations.
+            JSON format:
             {
               "issues": [
                 {
-                  "file": "src/file.ts",
+                  "file": "path/to/file",
                   "line": 10,
                   "type": "Security",
-                  "description": "SQL injection vulnerability",
-                  "code_snippet": "const query = \"SELECT * FROM users WHERE id = \" + userId;"
+                  "description": "issue description",
+                  "code_snippet": "problematic code"
                 }
               ]
             }
-
-            Return ONLY valid JSON. Focus on actual issues.
             `;
 
             // Retry logic with exponential backoff
@@ -192,8 +191,16 @@ jobs:
 
             const reviewText = data.candidates[0].content.parts[0].text;
 
-            // Parse JSON response (handle potential markdown code blocks)
+            // Parse JSON response (handle potential markdown code blocks and extra text)
             let jsonText = reviewText.trim();
+            
+            // Try to extract JSON from the response
+            const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              jsonText = jsonMatch[0];
+            }
+            
+            // Remove markdown code blocks if present
             if (jsonText.startsWith('```')) {
               jsonText = jsonText.replace(/^```json\n/, '').replace(/^```\n/, '').replace(/```$/, '');
             }
@@ -202,7 +209,8 @@ jobs:
             try {
               reviewData = JSON.parse(jsonText);
             } catch (e) {
-              console.log('Failed to parse JSON, raw response:', jsonText);
+              console.log('Failed to parse JSON, raw response:', reviewText);
+              console.log('Attempted to parse:', jsonText);
               throw new Error('Failed to parse Gemini response as JSON');
             }
 
