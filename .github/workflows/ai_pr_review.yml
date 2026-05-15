@@ -29,7 +29,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Get changed files
         id: changed-files
@@ -42,61 +42,51 @@ jobs:
           FILES: ${{ steps.changed-files.outputs.all_changed_files }}
         with:
           script: |
-            const fs = require('fs');
+            const { execSync } = require('child_process');
 
             const changedFiles = process.env.FILES
               .split(' ')
-              .filter(Boolean)
-              .slice(0, 50);
+              .filter(Boolean);
 
-            let fileContents = '';
+            // Get the PR base ref for proper diff comparison
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request?.number || context.payload.issue?.number
+            });
+            const baseRef = pr.data.base.ref;
+
+            let fileDiffs = '';
 
             for (const file of changedFiles) {
               try {
-                const content = fs.readFileSync(file, 'utf8');
+                const diff = execSync(`git diff origin/${baseRef} HEAD -- "${file}"`, { encoding: 'utf8' });
 
-                fileContents += `
-                ====================================
-                FILE: ${file}
-                ====================================
+                if (diff.trim()) {
+                  fileDiffs += `
+                  ====================================
+                  FILE: ${file}
+                  ====================================
 
-                ${content.substring(0, 2500)}
-                `;
+                  ${diff}
+                  `;
+                }
 
               } catch (e) {
-                console.log(`Skipping unreadable file: ${file}`);
+                console.log(`Skipping file without diff: ${file}`);
               }
             }
 
             const prompt = `
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${context.payload.pull_request?.number || context.payload.issue?.number || 'N/A'}
-
-            You are a Senior Software Engineer performing a thorough code review.
-
-            REVIEW PRINCIPLES:
-            1. CRITICAL THINKING - Challenge assumptions, identify redundant code, suggest better alternatives
-            2. CODE QUALITY - Best practices, error handling, readability, maintainability
-            3. SECURITY - Vulnerabilities, input sanitization, authentication/authorization
-            4. PERFORMANCE - Bottlenecks, efficiency, memory leaks, scalability
-            5. TESTING - Coverage, edge cases, test quality
-            6. FUTURE-ORIENTED - Modular design, extensibility, avoid tight coupling
-
-            When reviewing, consider:
-            * Is this code intuitive and maintainable?
-            * Are there edge cases not handled?
-            * Can this be simplified without losing functionality?
-            * Are there security risks or performance issues?
-            * Is the architecture scalable and extensible?
+            Review the following code changes. Focus on: security, performance, bugs, and code quality.
 
             CHANGED FILES:
             ${changedFiles.join('\n')}
 
-            FILE CONTENTS:
-            ${fileContents}
+            FILE DIFFS:
+            ${fileDiffs}
 
             OUTPUT FORMAT (strict JSON):
-            Return ONLY valid JSON with this structure:
             {
               "issues": [
                 {
@@ -109,12 +99,7 @@ jobs:
               ]
             }
 
-            IMPORTANT:
-            - Return ONLY the JSON, no markdown formatting
-            - Line numbers must be integers
-            - Files must be from the changed files list
-            - Focus on actual issues, not theoretical concerns
-            - Be direct and actionable
+            Return ONLY valid JSON. Focus on actual issues.
             `;
 
             // Retry logic with exponential backoff
@@ -161,7 +146,7 @@ jobs:
                         temperature: 0.3,
                         topP: 0.9,
                         topK: 20,
-                        maxOutputTokens: 8192
+                        maxOutputTokens: 4096
                       }
                     })
                   }
