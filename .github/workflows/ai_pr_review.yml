@@ -95,33 +95,34 @@ jobs:
             FILE CONTENTS:
             ${fileContents}
 
-            OUTPUT FORMAT (strict):
-            ## Summary
-            [One sentence overview of the PR quality]
+            OUTPUT FORMAT (strict JSON):
+            Return ONLY valid JSON with this structure:
+            {
+              "summary": "One sentence overview of the PR quality",
+              "issues": [
+                {
+                  "file": "src/file.ts",
+                  "line": 10,
+                  "type": "Security",
+                  "description": "SQL injection vulnerability",
+                  "code_snippet": "const query = \"SELECT * FROM users WHERE id = \" + userId;"
+                }
+              ],
+              "positives": [
+                {
+                  "file": "src/component.ts",
+                  "line": 5,
+                  "description": "Clean component structure"
+                }
+              ]
+            }
 
-            ## Issues
-            Group by file. For each issue, include the problematic code snippet in a code block.
-            Format:
-            ### src/file.ts
-            - **Line X** - [Issue Type] - [Description]
-              \`\`\`
-              [Problematic code snippet]
-              \`\`\`
-
-            Example:
-            ### src/file.ts
-            - **Line 10** - Security - SQL injection vulnerability
-              \`\`\`
-              const query = "SELECT * FROM users WHERE id = " + userId;
-              \`\`\`
-
-            ## Positive
-            Group by file. Use bullet points.
-            Example:
-            ### src/component.ts
-            - **Line 5** - Clean component structure
-
-            Focus on actual issues, not theoretical concerns. Be direct and actionable.
+            IMPORTANT:
+            - Return ONLY the JSON, no markdown formatting
+            - Line numbers must be integers
+            - Files must be from the changed files list
+            - Focus on actual issues, not theoretical concerns
+            - Be direct and actionable
             `;
 
             // Retry logic with exponential backoff
@@ -197,7 +198,21 @@ jobs:
               throw new Error(`Invalid Gemini response after ${maxRetries} retries. Last error: ${lastError}`);
             }
 
-            const review = data.candidates[0].content.parts[0].text;
+            const reviewText = data.candidates[0].content.parts[0].text;
+
+            // Parse JSON response (handle potential markdown code blocks)
+            let jsonText = reviewText.trim();
+            if (jsonText.startsWith('```')) {
+              jsonText = jsonText.replace(/^```json\n/, '').replace(/^```\n/, '').replace(/```$/, '');
+            }
+            
+            let reviewData;
+            try {
+              reviewData = JSON.parse(jsonText);
+            } catch (e) {
+              console.log('Failed to parse JSON, raw response:', jsonText);
+              throw new Error('Failed to parse Gemini response as JSON');
+            }
 
             // Determine PR number based on event type
             let prNumber;
@@ -215,14 +230,42 @@ jobs:
 
             console.log('Determined PR number:', prNumber);
 
-            // Create a Pull Request Review (has "Resolve conversation" button)
+            // Get the PR to retrieve commit SHA for inline comments
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            const commitId = pr.data.head.sha;
+
+            // Build inline review comments
+            const comments = [];
+            
+            if (reviewData.issues && Array.isArray(reviewData.issues)) {
+              for (const issue of reviewData.issues) {
+                if (issue.file && issue.line) {
+                  const commentBody = `**${issue.type || 'Issue'}**: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``;
+                  comments.push({
+                    path: issue.file,
+                    line: issue.line,
+                    body: commentBody
+                  });
+                }
+              }
+            }
+
+            // Create a Pull Request Review with inline comments
             if (prNumber) {
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber,
-                body: review,
-                event: 'COMMENT'
+                commit_id: commitId,
+                body: `## Summary\n\n${reviewData.summary || 'No summary provided.'}\n\n## Positive\n\n${reviewData.positives && reviewData.positives.length > 0 
+                  ? reviewData.positives.map(p => `**${p.file}** - Line ${p.line}: ${p.description}`).join('\n')
+                  : 'No positive notes.'}`,
+                comments: comments,
+                event: comments.length > 0 ? 'REQUEST_CHANGES' : 'COMMENT'
               });
             } else {
               console.log('No valid PR number found, skipping review');
