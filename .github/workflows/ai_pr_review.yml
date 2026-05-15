@@ -222,12 +222,7 @@ jobs:
 
             console.log('Determined PR number:', prNumber);
 
-            // Get the PR to retrieve commit SHA for inline comments
-            const pr = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
+            // Reuse the PR data to get commit SHA for inline comments
             const commitId = pr.data.head.sha;
 
             // Build inline review comments
