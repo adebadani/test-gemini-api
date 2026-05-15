@@ -236,7 +236,7 @@ jobs:
 
             console.log('Determined PR number:', prNumber);
 
-            // Get the PR to retrieve commit SHA for inline comments
+            // Get the PR to retrieve commit SHA and files
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -244,19 +244,65 @@ jobs:
             });
             const commitId = pr.data.head.sha;
 
-            // Build inline review comments
+            // Fetch the actual file contents at the commit to validate line numbers
+            const fileLineCounts = {};
+            for (const file of changedFiles) {
+              try {
+                const fileContent = await github.rest.repos.getContent({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  path: file,
+                  ref: commitId
+                });
+                if (fileContent.data.content) {
+                  const decoded = Buffer.from(fileContent.data.content, 'base64').toString('utf8');
+                  fileLineCounts[file] = decoded.split('\n').length;
+                }
+              } catch (e) {
+                console.log(`Could not fetch file ${file} at commit ${commitId}`);
+              }
+            }
+
+            // Build inline review comments with validated line numbers
             const comments = [];
+            const invalidIssues = [];
             
             if (reviewData.issues && Array.isArray(reviewData.issues)) {
               for (const issue of reviewData.issues) {
                 if (issue.file && issue.line) {
-                  const commentBody = `**${issue.type || 'Issue'}**: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``;
-                  comments.push({
-                    path: issue.file,
-                    line: issue.line,
-                    body: commentBody
-                  });
+                  // Validate that the line number exists in the file
+                  const maxLines = fileLineCounts[issue.file];
+                  if (maxLines && issue.line <= maxLines) {
+                    const commentBody = `**${issue.type || 'Issue'}**: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``;
+                    comments.push({
+                      path: issue.file,
+                      line: issue.line,
+                      body: commentBody
+                    });
+                  } else {
+                    // Line number is invalid, add to general review body
+                    invalidIssues.push(issue);
+                  }
+                } else {
+                  // No file or line specified, add to general review body
+                  invalidIssues.push(issue);
                 }
+              }
+            }
+
+            // Build review body for issues that couldn't be added as inline comments
+            let reviewBody = '';
+            if (invalidIssues.length > 0) {
+              reviewBody = '## Additional Issues\n\n';
+              for (const issue of invalidIssues) {
+                const location = issue.file ? `**File:** ${issue.file}${issue.line ? ` (line ${issue.line})` : ''}` : '';
+                reviewBody += `### ${issue.type || 'Issue'}\n\n`;
+                if (location) reviewBody += `${location}\n\n`;
+                reviewBody += `${issue.description}\n\n`;
+                if (issue.code_snippet) {
+                  reviewBody += '```' + '\n' + issue.code_snippet + '\n' + '```' + '\n\n';
+                }
+                reviewBody += '---\n\n';
               }
             }
 
@@ -267,9 +313,9 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: prNumber,
                 commit_id: commitId,
-                body: '',
+                body: reviewBody,
                 comments: comments,
-                event: comments.length > 0 ? 'REQUEST_CHANGES' : 'COMMENT'
+                event: (comments.length > 0 || invalidIssues.length > 0) ? 'REQUEST_CHANGES' : 'COMMENT'
               });
             } else {
               console.log('No valid PR number found, skipping review');
