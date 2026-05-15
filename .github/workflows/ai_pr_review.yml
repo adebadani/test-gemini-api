@@ -126,11 +126,25 @@ jobs:
             `;
 
             // Retry logic with exponential backoff
-            const maxRetries = 5;
-            const initialDelay = 1000;
+            const maxRetries = 10;
+            const initialDelay = 2000;
             let retryCount = 0;
             let data;
             let lastError;
+
+            // Helper to parse retry delay from API response
+            const parseRetryDelay = (errorDetails) => {
+              if (!errorDetails) return null;
+              for (const detail of errorDetails) {
+                if (detail.retryDelay) {
+                  const match = detail.retryDelay.match(/(\d+)/);
+                  if (match) {
+                    return parseInt(match[1]) * 1000;
+                  }
+                }
+              }
+              return null;
+            };
 
             while (retryCount < maxRetries) {
               try {
@@ -168,8 +182,9 @@ jobs:
                 }
 
                 if (response.status === 429) {
-                  const retryDelay = data?.error?.details?.[2]?.retryDelay || '7s';
-                  const delayMs = parseInt(retryDelay) * 1000 || (initialDelay * Math.pow(2, retryCount));
+                  const apiDelay = parseRetryDelay(data?.error?.details);
+                  const exponentialDelay = initialDelay * Math.pow(2, retryCount);
+                  const delayMs = apiDelay || exponentialDelay;
                   console.log(`Quota exceeded. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
                   await new Promise(resolve => setTimeout(resolve, delayMs));
                   retryCount++;
