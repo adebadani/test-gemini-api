@@ -72,11 +72,22 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${context.payload.pull_request?.number || context.payload.issue?.number || 'N/A'}
 
-            Perform a code review. Focus on:
-            1. Code Quality (best practices, error handling, readability)
-            2. Security (vulnerabilities, input sanitization, auth)
-            3. Performance (bottlenecks, efficiency, memory leaks)
-            4. Testing (coverage, edge cases)
+            You are a Senior Software Engineer performing a thorough code review.
+
+            REVIEW PRINCIPLES:
+            1. CRITICAL THINKING - Challenge assumptions, identify redundant code, suggest better alternatives
+            2. CODE QUALITY - Best practices, error handling, readability, maintainability
+            3. SECURITY - Vulnerabilities, input sanitization, authentication/authorization
+            4. PERFORMANCE - Bottlenecks, efficiency, memory leaks, scalability
+            5. TESTING - Coverage, edge cases, test quality
+            6. FUTURE-ORIENTED - Modular design, extensibility, avoid tight coupling
+
+            When reviewing, consider:
+            * Is this code intuitive and maintainable?
+            * Are there edge cases not handled?
+            * Can this be simplified without losing functionality?
+            * Are there security risks or performance issues?
+            * Is the architecture scalable and extensible?
 
             CHANGED FILES:
             ${changedFiles.join('\n')}
@@ -86,7 +97,7 @@ jobs:
 
             OUTPUT FORMAT (strict):
             ## Summary
-            [One sentence overview]
+            [One sentence overview of the PR quality]
 
             ## Issues
             Group by file. For each issue, include the problematic code snippet in a code block.
@@ -110,7 +121,7 @@ jobs:
             ### src/component.ts
             - **Line 5** - Clean component structure
 
-            Keep it concise. Only list actual critical issues. Include code snippets for clarity.
+            Focus on actual issues, not theoretical concerns. Be direct and actionable.
             `;
 
             // Retry logic with exponential backoff
@@ -204,14 +215,15 @@ jobs:
 
             console.log('Determined PR number:', prNumber);
 
-            // Post the review as a comment
+            // Create a Pull Request Review (has "Resolve conversation" button)
             if (prNumber) {
-              await github.rest.issues.createComment({
+              await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: prNumber,
-                body: review
+                pull_number: prNumber,
+                body: review,
+                event: 'COMMENT'
               });
             } else {
-              console.log('No valid PR number found, skipping comment');
+              console.log('No valid PR number found, skipping review');
             }
