@@ -46,82 +46,47 @@ jobs:
 
             const changedFiles = process.env.FILES
               .split(' ')
-              .filter(Boolean)
+              .filter(Boolean);
 
-            let fileContents = '';
+            console.log(`Processing ${changedFiles.length} changed files`);
 
-            for (const file of changedFiles) {
-              try {
-                const content = fs.readFileSync(file, 'utf8');
+            // Filter ignored file patterns
+            const ignoredPatterns = [
+              '.lock',
+              'package-lock.json',
+              'pnpm-lock.yaml',
+              'yarn.lock',
+              '.svg',
+              '.png',
+              '.jpg',
+              '.jpeg',
+              '.gif',
+              '.ico',
+              '.min.js',
+              '.min.css',
+              'dist/',
+              'build/',
+              '.next/',
+              'coverage/'
+            ];
 
-                fileContents += `
-                ====================================
-                FILE: ${file}
-                ====================================
+            const filteredFiles = changedFiles.filter(file => {
+              return !ignoredPatterns.some(pattern => file.includes(pattern));
+            });
 
-                ${content.substring(0, 2500)}
-                `;
+            console.log(`After filtering: ${filteredFiles.length} files`);
 
-              } catch (e) {
-                console.log(`Skipping unreadable file: ${file}`);
-              }
+            // Process files in batches to avoid token limits
+            const batchSize = 3;
+            const batches = [];
+            for (let i = 0; i < filteredFiles.length; i += batchSize) {
+              batches.push(filteredFiles.slice(i, i + batchSize));
             }
 
-            const prompt = `
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${context.payload.pull_request?.number || context.payload.issue?.number || 'N/A'}
+            console.log(`Created ${batches.length} batches`);
 
-            You are a Senior Software Engineer performing a thorough code review.
-
-            REVIEW PRINCIPLES:
-            1. CRITICAL THINKING - Challenge assumptions, identify redundant code, suggest better alternatives
-            2. CODE QUALITY - Best practices, error handling, readability, maintainability
-            3. SECURITY - Vulnerabilities, input sanitization, authentication/authorization
-            4. PERFORMANCE - Bottlenecks, efficiency, memory leaks, scalability
-            5. TESTING - Coverage, edge cases, test quality
-            6. FUTURE-ORIENTED - Modular design, extensibility, avoid tight coupling
-
-            When reviewing, consider:
-            * Is this code intuitive and maintainable?
-            * Are there edge cases not handled?
-            * Can this be simplified without losing functionality?
-            * Are there security risks or performance issues?
-            * Is the architecture scalable and extensible?
-
-            CHANGED FILES:
-            ${changedFiles.join('\n')}
-
-            FILE CONTENTS:
-            ${fileContents}
-
-            OUTPUT FORMAT (strict JSON):
-            Return ONLY valid JSON with this structure:
-            {
-              "issues": [
-                {
-                  "file": "src/file.ts",
-                  "line": 10,
-                  "type": "Security",
-                  "description": "SQL injection vulnerability",
-                  "code_snippet": "const query = \"SELECT * FROM users WHERE id = \" + userId;"
-                }
-              ]
-            }
-
-            IMPORTANT:
-            - Return ONLY the JSON, no markdown formatting
-            - Line numbers must be integers
-            - Files must be from the changed files list
-            - Focus on actual issues, not theoretical concerns
-            - Be direct and actionable
-            `;
-
-            // Retry logic with exponential backoff
-            const maxRetries = 10;
-            const initialDelay = 2000;
-            let retryCount = 0;
-            let data;
-            let lastError;
+            const allIssues = [];
+            const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
             // Helper to parse retry delay from API response
             const parseRetryDelay = (errorDetails) => {
@@ -137,88 +102,180 @@ jobs:
               return null;
             };
 
-            while (retryCount < maxRetries) {
-              try {
-                const response = await fetch(
-                  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + process.env.GEMINI_API_KEY,
+            // Process each batch
+            for (const [batchIndex, batch] of batches.entries()) {
+              console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} files)`);
+
+              // Read file contents for this batch
+              let fileContents = '';
+              for (const file of batch) {
+                try {
+                  const content = fs.readFileSync(file, 'utf8');
+                  fileContents += `
+                  ====================================
+                  FILE: ${file}
+                  ====================================
+
+                  ${content.substring(0, 3000)}
+                  `;
+                } catch (e) {
+                  console.log(`Skipping unreadable file: ${file}`);
+                }
+              }
+
+              const prompt = `
+              REPO: ${{ github.repository }}
+              PR NUMBER: ${context.payload.pull_request?.number || context.payload.issue?.number || 'N/A'}
+
+              You are a Senior Software Engineer performing a thorough code review.
+
+              REVIEW PRINCIPLES:
+              1. CRITICAL THINKING - Challenge assumptions, identify redundant code, suggest better alternatives
+              2. CODE QUALITY - Best practices, error handling, readability, maintainability
+              3. SECURITY - Vulnerabilities, input sanitization, authentication/authorization
+              4. PERFORMANCE - Bottlenecks, efficiency, memory leaks, scalability
+              5. TESTING - Coverage, edge cases, test quality
+              6. FUTURE-ORIENTED - Modular design, extensibility, avoid tight coupling
+
+              When reviewing, consider:
+              * Is this code intuitive and maintainable?
+              * Are there edge cases not handled?
+              * Can this be simplified without losing functionality?
+              * Are there security risks or performance issues?
+              * Is the architecture scalable and extensible?
+
+              CHANGED FILES IN THIS BATCH:
+              ${batch.join('\n')}
+
+              FILE CONTENTS:
+              ${fileContents}
+
+              OUTPUT FORMAT (strict JSON):
+              Return ONLY valid JSON with this structure:
+              {
+                "issues": [
                   {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                      contents: [
-                        {
-                          parts: [
-                            {
-                              text: prompt
-                            }
-                          ]
-                        }
-                      ],
-                      generationConfig: {
-                        temperature: 0.3,
-                        topP: 0.9,
-                        topK: 20,
-                        maxOutputTokens: 8192
-                      }
-                    })
+                    "file": "src/file.ts",
+                    "line": 10,
+                    "type": "Security",
+                    "description": "SQL injection vulnerability",
+                    "code_snippet": "const query = \"SELECT * FROM users WHERE id = \" + userId;"
                   }
-                );
+                ]
+              }
 
-                data = await response.json();
+              IMPORTANT:
+              - Return ONLY the JSON, no markdown formatting
+              - Line numbers must be integers
+              - Files must be from the changed files list
+              - Focus on actual issues, not theoretical concerns
+              - Be direct and actionable
+              `;
 
-                if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                  break;
+              // Retry logic with exponential backoff
+              const maxRetries = 10;
+              const initialDelay = 2000;
+              let retryCount = 0;
+              let data;
+              let lastError;
+
+              while (retryCount < maxRetries) {
+                try {
+                  const response = await fetch(
+                    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + process.env.GEMINI_API_KEY,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({
+                        contents: [
+                          {
+                            parts: [
+                              {
+                                text: prompt
+                              }
+                            ]
+                          }
+                        ],
+                        generationConfig: {
+                          temperature: 0.3,
+                          topP: 0.9,
+                          topK: 20,
+                          maxOutputTokens: 8192
+                        }
+                      })
+                    }
+                  );
+
+                  data = await response.json();
+
+                  if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    break;
+                  }
+
+                  if (response.status === 429) {
+                    const apiDelay = parseRetryDelay(data?.error?.details);
+                    const exponentialDelay = initialDelay * Math.pow(2, retryCount);
+                    const delayMs = apiDelay || exponentialDelay;
+                    console.log(`Quota exceeded. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, delayMs));
+                    retryCount++;
+                    lastError = data.error?.message || 'Quota exceeded';
+                    continue;
+                  }
+
+                  console.log(JSON.stringify(data, null, 2));
+                  throw new Error(`Invalid Gemini response: ${data.error?.message || 'Unknown error'}`);
+
+                } catch (error) {
+                  if (retryCount < maxRetries - 1) {
+                    const delayMs = initialDelay * Math.pow(2, retryCount);
+                    console.log(`Error occurred. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, delayMs));
+                    retryCount++;
+                    lastError = error.message;
+                  } else {
+                    console.log(`Batch ${batchIndex + 1} failed permanently: ${lastError}`);
+                    break;
+                  }
                 }
+              }
 
-                if (response.status === 429) {
-                  const apiDelay = parseRetryDelay(data?.error?.details);
-                  const exponentialDelay = initialDelay * Math.pow(2, retryCount);
-                  const delayMs = apiDelay || exponentialDelay;
-                  console.log(`Quota exceeded. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
-                  await new Promise(resolve => setTimeout(resolve, delayMs));
-                  retryCount++;
-                  lastError = data.error?.message || 'Quota exceeded';
-                  continue;
-                }
+              if (!data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                console.log(`Skipping batch ${batchIndex + 1} due to API failure`);
+                continue;
+              }
 
-                console.log(JSON.stringify(data, null, 2));
-                throw new Error(`Invalid Gemini response: ${data.error?.message || 'Unknown error'}`);
+              const reviewText = data.candidates[0].content.parts[0].text;
 
-              } catch (error) {
-                if (retryCount < maxRetries - 1) {
-                  const delayMs = initialDelay * Math.pow(2, retryCount);
-                  console.log(`Error occurred. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
-                  await new Promise(resolve => setTimeout(resolve, delayMs));
-                  retryCount++;
-                  lastError = error.message;
-                } else {
-                  throw error;
-                }
+              // Parse JSON response (handle potential markdown code blocks)
+              let jsonText = reviewText.trim();
+              if (jsonText.startsWith('```')) {
+                jsonText = jsonText.replace(/^```json\n/, '').replace(/^```\n/, '').replace(/```$/, '');
+              }
+              
+              let reviewData;
+              try {
+                reviewData = JSON.parse(jsonText);
+              } catch (e) {
+                console.log(`Failed to parse JSON for batch ${batchIndex + 1}, raw response:`, jsonText);
+                continue;
+              }
+
+              if (reviewData.issues && Array.isArray(reviewData.issues)) {
+                allIssues.push(...reviewData.issues);
+                console.log(`Batch ${batchIndex + 1}: Found ${reviewData.issues.length} issues`);
+              }
+
+              // Delay between batches to avoid rate limiting
+              if (batchIndex < batches.length - 1) {
+                console.log('Waiting 2 seconds before next batch...');
+                await sleep(2000);
               }
             }
 
-            if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-              console.log(JSON.stringify(data, null, 2));
-              throw new Error(`Invalid Gemini response after ${maxRetries} retries. Last error: ${lastError}`);
-            }
-
-            const reviewText = data.candidates[0].content.parts[0].text;
-
-            // Parse JSON response (handle potential markdown code blocks)
-            let jsonText = reviewText.trim();
-            if (jsonText.startsWith('```')) {
-              jsonText = jsonText.replace(/^```json\n/, '').replace(/^```\n/, '').replace(/```$/, '');
-            }
-            
-            let reviewData;
-            try {
-              reviewData = JSON.parse(jsonText);
-            } catch (e) {
-              console.log('Failed to parse JSON, raw response:', jsonText);
-              throw new Error('Failed to parse Gemini response as JSON');
-            }
+            console.log(`Total issues found across all batches: ${allIssues.length}`);
 
             // Determine PR number based on event type
             let prNumber;
@@ -236,7 +293,7 @@ jobs:
 
             console.log('Determined PR number:', prNumber);
 
-            // Get the PR to retrieve commit SHA and files
+            // Get the PR to retrieve commit SHA for inline comments
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -244,65 +301,19 @@ jobs:
             });
             const commitId = pr.data.head.sha;
 
-            // Fetch the actual file contents at the commit to validate line numbers
-            const fileLineCounts = {};
-            for (const file of changedFiles) {
-              try {
-                const fileContent = await github.rest.repos.getContent({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  path: file,
-                  ref: commitId
-                });
-                if (fileContent.data.content) {
-                  const decoded = Buffer.from(fileContent.data.content, 'base64').toString('utf8');
-                  fileLineCounts[file] = decoded.split('\n').length;
-                }
-              } catch (e) {
-                console.log(`Could not fetch file ${file} at commit ${commitId}`);
-              }
-            }
-
-            // Build inline review comments with validated line numbers
+            // Build inline review comments
             const comments = [];
-            const invalidIssues = [];
             
-            if (reviewData.issues && Array.isArray(reviewData.issues)) {
-              for (const issue of reviewData.issues) {
+            if (allIssues && Array.isArray(allIssues)) {
+              for (const issue of allIssues) {
                 if (issue.file && issue.line) {
-                  // Validate that the line number exists in the file
-                  const maxLines = fileLineCounts[issue.file];
-                  if (maxLines && issue.line <= maxLines) {
-                    const commentBody = `**${issue.type || 'Issue'}**: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``;
-                    comments.push({
-                      path: issue.file,
-                      line: issue.line,
-                      body: commentBody
-                    });
-                  } else {
-                    // Line number is invalid, add to general review body
-                    invalidIssues.push(issue);
-                  }
-                } else {
-                  // No file or line specified, add to general review body
-                  invalidIssues.push(issue);
+                  const commentBody = `**${issue.type || 'Issue'}**: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``;
+                  comments.push({
+                    path: issue.file,
+                    line: issue.line,
+                    body: commentBody
+                  });
                 }
-              }
-            }
-
-            // Build review body for issues that couldn't be added as inline comments
-            let reviewBody = '';
-            if (invalidIssues.length > 0) {
-              reviewBody = '## Additional Issues\n\n';
-              for (const issue of invalidIssues) {
-                const location = issue.file ? `**File:** ${issue.file}${issue.line ? ` (line ${issue.line})` : ''}` : '';
-                reviewBody += `### ${issue.type || 'Issue'}\n\n`;
-                if (location) reviewBody += `${location}\n\n`;
-                reviewBody += `${issue.description}\n\n`;
-                if (issue.code_snippet) {
-                  reviewBody += '```' + '\n' + issue.code_snippet + '\n' + '```' + '\n\n';
-                }
-                reviewBody += '---\n\n';
               }
             }
 
@@ -313,9 +324,9 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: prNumber,
                 commit_id: commitId,
-                body: reviewBody,
+                body: '',
                 comments: comments,
-                event: (comments.length > 0 || invalidIssues.length > 0) ? 'REQUEST_CHANGES' : 'COMMENT'
+                event: comments.length > 0 ? 'REQUEST_CHANGES' : 'COMMENT'
               });
             } else {
               console.log('No valid PR number found, skipping review');
