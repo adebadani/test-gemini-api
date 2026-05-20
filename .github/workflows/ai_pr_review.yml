@@ -26,17 +26,32 @@ jobs:
       issues: read
       actions: read
     steps:
+      - name: Get PR info (if triggered by comment)
+        if: github.event_name == 'issue_comment'
+        id: pr-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prUrl = context.payload.issue.pull_request.url;
+            const prNumber = parseInt(prUrl.split('/').pop());
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            return { number: prNumber, sha: pr.data.head.sha };
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request.head.sha || github.event.pull_request.head.sha || github.ref }}
+          ref: ${{ github.event_name == 'issue_comment' && steps.pr-info.outputs.result && fromJSON(steps.pr-info.outputs.result).sha || github.event.pull_request.head.sha || github.ref }}
 
       - name: Get changed files
         id: changed-files
         uses: tj-actions/changed-files@v45
         with:
-          pr_number: ${{ github.event.pull_request.number || github.event.issue.number }}
+          pr_number: ${{ github.event_name == 'issue_comment' && steps.pr-info.outputs.result && fromJSON(steps.pr-info.outputs.result).number || github.event.pull_request.number || github.event.issue.number }}
 
       - name: Run Gemini Code Review
         uses: actions/github-script@v7
