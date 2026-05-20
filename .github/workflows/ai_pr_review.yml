@@ -1,9 +1,6 @@
-# scope:   pr
-# type:    check
-# trigger: issue_comment, pull_request_review_comment, issues, pull_request_review
-# paths:   - (global)
 name: PR – Check Gemini
 
+# Trigger workflow on PR events, PR review submissions, and comments
 on:
   pull_request:
     types: [opened]
@@ -14,10 +11,11 @@ on:
 
 jobs:
   gemini:
+    # Only run for PR events, review comments, or "!review" comments on PRs
     if: |
       github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '!review')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '!review'))
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '!review')) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '!review'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,33 +24,60 @@ jobs:
       issues: read
       actions: read
     steps:
-      - name: Get PR info (if triggered by comment)
-        if: github.event_name == 'issue_comment'
+
+      # Debug event payload
+      - name: Debug event payload
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "PR URL: ${{ github.event.pull_request.url || github.event.issue.pull_request.url || 'N/A' }}"
+          echo "Comment body: ${{ github.event.comment.body || github.event.review.body || 'N/A' }}"
+
+      # Determine PR number and head SHA
+      - name: Get PR info
         id: pr-info
         uses: actions/github-script@v7
         with:
           script: |
-            const prUrl = context.payload.issue.pull_request.url;
-            const prNumber = parseInt(prUrl.split('/').pop());
-            const pr = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
-            return { number: prNumber, sha: pr.data.head.sha };
+            let prNumber, sha;
 
+            if (context.eventName === 'pull_request') {
+              prNumber = context.payload.pull_request.number;
+              sha = context.payload.pull_request.head.sha;
+            } else if (context.eventName === 'pull_request_review') {
+              prNumber = context.payload.pull_request.number;
+              sha = context.payload.pull_request.head.sha;
+            } else if (context.eventName === 'issue_comment' && context.payload.issue.pull_request) {
+              // Extract PR number from issue.pull_request.url
+              const prUrl = context.payload.issue.pull_request.url;
+              prNumber = parseInt(prUrl.split('/').pop());
+              const pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              sha = pr.data.head.sha;
+            }
+
+            console.log(`PR number: ${prNumber}`);
+            console.log(`PR SHA: ${sha}`);
+
+            return { pr_number: prNumber, pr_sha: sha };
+
+      # Checkout the correct PR branch
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'issue_comment' && steps.pr-info.outputs.result && fromJSON(steps.pr-info.outputs.result).sha || github.event.pull_request.head.sha || github.ref }}
+          ref: ${{ steps.pr-info.outputs.pr_sha }}
 
+      # Get changed files in PR
       - name: Get changed files
         id: changed-files
         uses: tj-actions/changed-files@v45
         with:
-          pr_number: ${{ github.event_name == 'issue_comment' && steps.pr-info.outputs.result && fromJSON(steps.pr-info.outputs.result).number || github.event.pull_request.number || github.event.issue.number }}
+          pr_number: ${{ steps.pr-info.outputs.pr_number }}
 
+      # Run Gemini Code Review
       - name: Run Gemini Code Review
         uses: actions/github-script@v7
         env:
@@ -64,47 +89,36 @@ jobs:
 
             const changedFiles = process.env.FILES
               .split(' ')
-              .filter(Boolean)
+              .filter(Boolean);
 
             let fileContents = '';
-
             for (const file of changedFiles) {
               try {
-                const content = fs.readFileSync(file, 'utf8');
-
                 fileContents += `
                 ====================================
                 FILE: ${file}
                 ====================================
 
-                ${content}
+                ${fs.readFileSync(file, 'utf8')}
                 `;
-
-              } catch (e) {
+              } catch {
                 console.log(`Skipping unreadable file: ${file}`);
               }
             }
 
             const prompt = `
               REPO: ${{ github.repository }}
-              PR NUMBER: ${context.payload.pull_request?.number || context.payload.issue?.number || 'N/A'}
+              PR NUMBER: ${{ steps.pr-info.outputs.pr_number }}
 
               You are a Senior Software Engineer performing a thorough code review.
 
               REVIEW PRINCIPLES:
-              1. CRITICAL THINKING - Challenge assumptions, identify redundant code, suggest better alternatives
-              2. CODE QUALITY - Best practices, error handling, readability, maintainability
-              3. SECURITY - Vulnerabilities, input sanitization, authentication/authorization
-              4. PERFORMANCE - Bottlenecks, efficiency, memory leaks, scalability
-              5. TESTING - Coverage, edge cases, test quality
-              6. FUTURE-ORIENTED - Modular design, extensibility, avoid tight coupling
-
-              When reviewing, consider:
-              * Is this code intuitive and maintainable?
-              * Are there edge cases not handled?
-              * Can this be simplified without losing functionality?
-              * Are there security risks or performance issues?
-              * Is the architecture scalable and extensible?
+              1. CRITICAL THINKING
+              2. CODE QUALITY
+              3. SECURITY
+              4. PERFORMANCE
+              5. TESTING
+              6. FUTURE-ORIENTED DESIGN
 
               CHANGED FILES:
               ${changedFiles.join('\n')}
@@ -125,35 +139,11 @@ jobs:
                   }
                 ]
               }
-
-              IMPORTANT:
-              - Return ONLY the JSON, no markdown formatting
-              - Line numbers must be integers
-              - Files must be from the changed files list
-              - Focus on actual issues, not theoretical concerns
-              - Be direct and actionable
             `;
 
-            // Retry logic with exponential backoff
-            const maxRetries = 10;
-            const initialDelay = 2000;
+            const maxRetries = 5;
             let retryCount = 0;
-            let data;
-            let lastError;
-
-            // Helper to parse retry delay from API response
-            const parseRetryDelay = (errorDetails) => {
-              if (!errorDetails) return null;
-              for (const detail of errorDetails) {
-                if (detail.retryDelay) {
-                  const match = detail.retryDelay.match(/(\d+)/);
-                  if (match) {
-                    return parseInt(match[1]) * 1000;
-                  }
-                }
-              }
-              return null;
-            };
+            let responseData;
 
             while (retryCount < maxRetries) {
               try {
@@ -161,19 +151,9 @@ jobs:
                   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + process.env.GEMINI_API_KEY,
                   {
                     method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                      contents: [
-                        {
-                          parts: [
-                            {
-                              text: prompt
-                            }
-                          ]
-                        }
-                      ],
+                      contents: [{ parts: [{ text: prompt }] }],
                       generationConfig: {
                         temperature: 0.3,
                         topP: 0.9,
@@ -184,111 +164,49 @@ jobs:
                   }
                 );
 
-                data = await response.json();
+                responseData = await response.json();
+                if (response.ok && responseData.candidates?.[0]?.content?.parts?.[0]?.text) break;
 
-                if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                  break;
-                }
-
-                if (response.status === 429) {
-                  const apiDelay = parseRetryDelay(data?.error?.details);
-                  const exponentialDelay = initialDelay * Math.pow(2, retryCount);
-                  const delayMs = apiDelay || exponentialDelay;
-                  console.log(`Quota exceeded. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
-                  await new Promise(resolve => setTimeout(resolve, delayMs));
-                  retryCount++;
-                  lastError = data.error?.message || 'Quota exceeded';
-                  continue;
-                }
-
-                console.log(JSON.stringify(data, null, 2));
-                throw new Error(`Invalid Gemini response: ${data.error?.message || 'Unknown error'}`);
-
-              } catch (error) {
-                if (retryCount < maxRetries - 1) {
-                  const delayMs = initialDelay * Math.pow(2, retryCount);
-                  console.log(`Error occurred. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
-                  await new Promise(resolve => setTimeout(resolve, delayMs));
-                  retryCount++;
-                  lastError = error.message;
-                } else {
-                  throw error;
-                }
+                retryCount++;
+                await new Promise(r => setTimeout(r, 2000 * Math.pow(2, retryCount)));
+              } catch {
+                retryCount++;
+                await new Promise(r => setTimeout(r, 2000 * Math.pow(2, retryCount)));
               }
             }
 
-            if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-              console.log(JSON.stringify(data, null, 2));
-              throw new Error(`Invalid Gemini response after ${maxRetries} retries. Last error: ${lastError}`);
+            if (!responseData?.candidates?.[0]?.content?.parts?.[0]?.text) {
+              throw new Error('Gemini API failed after retries.');
             }
 
-            const reviewText = data.candidates[0].content.parts[0].text;
+            let reviewText = responseData.candidates[0].content.parts[0].text.trim();
+            if (reviewText.startsWith('```')) reviewText = reviewText.replace(/^```json\n|```$/g, '');
+            const reviewData = JSON.parse(reviewText);
 
-            // Parse JSON response (handle potential markdown code blocks)
-            let jsonText = reviewText.trim();
-            if (jsonText.startsWith('```')) {
-              jsonText = jsonText.replace(/^```json\n/, '').replace(/^```\n/, '').replace(/```$/, '');
-            }
-            
-            let reviewData;
-            try {
-              reviewData = JSON.parse(jsonText);
-            } catch (e) {
-              console.log('Failed to parse JSON, raw response:', jsonText);
-              throw new Error('Failed to parse Gemini response as JSON');
-            }
-
-            // Determine PR number based on event type
-            let prNumber;
-            console.log('Event name:', github.event_name);
-            console.log('Payload keys:', Object.keys(context.payload));
-
-            // Try multiple ways to get the PR number
-            if (context.payload.pull_request?.number) {
-              prNumber = context.payload.pull_request.number;
-            } else if (context.payload.number) {
-              prNumber = context.payload.number;
-            } else if (context.payload.issue?.number) {
-              prNumber = context.payload.issue.number;
-            }
-
-            console.log('Determined PR number:', prNumber);
-
-            // Get the PR to retrieve commit SHA for inline comments
-            const pr = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
-            const commitId = pr.data.head.sha;
-
-            // Build inline review comments
             const comments = [];
-            
             if (reviewData.issues && Array.isArray(reviewData.issues)) {
               for (const issue of reviewData.issues) {
                 if (issue.file && issue.line) {
-                  const commentBody = `**${issue.type || 'Issue'}**: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``;
                   comments.push({
                     path: issue.file,
                     line: issue.line,
-                    body: commentBody
+                    body: `**${issue.type}**: ${issue.description}\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``
                   });
                 }
               }
             }
 
-            // Create a Pull Request Review with inline comments
+            const prNumber = parseInt('${{ steps.pr-info.outputs.pr_number }}');
+            const prSha = '${{ steps.pr-info.outputs.pr_sha }}';
+
             if (prNumber) {
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber,
-                commit_id: commitId,
+                commit_id: prSha,
                 body: '',
                 comments: comments,
                 event: comments.length > 0 ? 'REQUEST_CHANGES' : 'COMMENT'
               });
-            } else {
-              console.log('No valid PR number found, skipping review');
             }
