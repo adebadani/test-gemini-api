@@ -16,8 +16,8 @@ jobs:
   gemini:
     if: |
       github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/review')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review'))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '!review')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '!review'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
