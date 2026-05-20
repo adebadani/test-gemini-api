@@ -160,7 +160,7 @@ jobs:
                         temperature: 0.3,
                         topP: 0.9,
                         topK: 20,
-                        maxOutputTokens: 8192
+                        maxOutputTokens: 65536
                       }
                     })
                   }
