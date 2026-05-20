@@ -246,30 +246,48 @@ jobs:
 
             // Build inline review comments
             const comments = [];
-            
+            const generalComments = [];
+
             if (reviewData.issues && Array.isArray(reviewData.issues)) {
               for (const issue of reviewData.issues) {
                 if (issue.file && issue.line) {
-                  const commentBody = `**${issue.type || 'Issue'}**: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``;
-                  comments.push({
-                    path: issue.file,
-                    line: issue.line,
-                    body: commentBody
-                  });
+                  // Validate that the line exists in the file
+                  try {
+                    const fileContent = fs.readFileSync(issue.file, 'utf8');
+                    const lines = fileContent.split('\n');
+                    if (issue.line > 0 && issue.line <= lines.length) {
+                      const commentBody = `**${issue.type || 'Issue'}**: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``;
+                      comments.push({
+                        path: issue.file,
+                        line: issue.line,
+                        body: commentBody
+                      });
+                    } else {
+                      // Line number is invalid, add as general comment
+                      generalComments.push(`**${issue.type || 'Issue'}** in \`${issue.file}\` (line ${issue.line}): ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``);
+                    }
+                  } catch (e) {
+                    // File doesn't exist or can't be read, add as general comment
+                    generalComments.push(`**${issue.type || 'Issue'}** in \`${issue.file}\` (line ${issue.line}): ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``);
+                  }
+                } else if (issue.file) {
+                  // No line number, add as general comment
+                  generalComments.push(`**${issue.type || 'Issue'}** in \`${issue.file}\`: ${issue.description}\n\n\`\`\`\n${issue.code_snippet || ''}\n\`\`\``);
                 }
               }
             }
 
             // Create a Pull Request Review with inline comments
             if (prNumber) {
+              const reviewBody = generalComments.length > 0 ? generalComments.join('\n\n---\n\n') : '';
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber,
                 commit_id: commitId,
-                body: '',
+                body: reviewBody,
                 comments: comments,
-                event: comments.length > 0 ? 'REQUEST_CHANGES' : 'COMMENT'
+                event: (comments.length > 0 || generalComments.length > 0) ? 'REQUEST_CHANGES' : 'COMMENT'
               });
             } else {
               console.log('No valid PR number found, skipping review');
