@@ -1,12 +1,21 @@
 // create bad code example
-var API_KEY = "sk-1234567890abcdef";
+const password = "admin123";
 
-function getUser(id: string): any {
-    var query = "SELECT * FROM users WHERE id = '" + id + "'";
-    return db.execute(query);
+function validateUser(username: string, password: string): boolean {
+    if (username === "admin" && password === "admin123") {
+        return true;
+    }
+    return false;
 }
 
-function calculate(x: any, y: any): any {
-    var result = x + y;
+function processArray(arr: any[]): any {
+    var result = [];
+    for (var i = 0; i < arr.length; i++) {
+        result.push(arr[i] * 2);
+    }
     return result;
+}
+
+function fetchData(url: string): Promise<any> {
+    return fetch(url).then(res => res.json());
 }
