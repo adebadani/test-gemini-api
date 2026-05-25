@@ -9,14 +9,11 @@ on:
     types: [opened, synchronize]
   pull_request_review:
     types: [submitted]
-  issue_comment:
-    types: [created]
 
 jobs:
   gemini:
     if: |
       (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]') ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/review') && github.event.comment.user.login != 'dependabot[bot]') ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review') && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     permissions:
@@ -26,17 +23,14 @@ jobs:
       issues: read
       actions: read
     steps:
-      - name: Debug event
-        run: |
-          echo "Event name: ${{ github.event_name }}"
-          echo "Comment body: ${{ github.event.comment.body || github.event.review.body }}"
-          echo "Comment user: ${{ github.event.comment.user.login || github.event.review.user.login }}"
-          echo "Issue has PR: ${{ github.event.issue.pull_request || github.event.pull_request }}"
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      
+      - name: Debug
+        run: |
+          echo "PR data: ${{ github.event.pull_request }}"
 
       - name: Get PR details
         id: pr-details
