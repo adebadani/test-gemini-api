@@ -1,0 +1,77 @@
+# scope:   pr
+# type:    check
+# trigger: issue_comment, pull_request_review_comment, issues, pull_request_review
+# paths:   - (global)
+name: PR – Check Gemini
+
+on:
+  pull_request:
+    types: [opened]
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created]
+
+jobs:
+  gemini:
+    if: |
+      (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]') ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/review') && github.event.comment.user.login != 'dependabot[bot]') ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review') && github.event.pull_request.user.login != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+      issues: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR details
+        id: pr-details
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let prNumber;
+            if (context.payload.pull_request?.number) {
+              prNumber = context.payload.pull_request.number;
+            } else if (context.payload.number) {
+              prNumber = context.payload.number;
+            } else if (context.payload.issue?.number) {
+              prNumber = context.payload.issue.number;
+            }
+            
+            if (prNumber) {
+              const pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              console.log(`PR #${prNumber}: base=${pr.data.base.sha}, head=${pr.data.head.sha}`);
+              return {
+                base_sha: pr.data.base.sha,
+                sha: pr.data.head.sha
+              };
+            }
+            return {};
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v45
+        with:
+          base_sha: ${{ steps.pr-details.outputs.base_sha }}
+          sha: ${{ steps.pr-details.outputs.sha }}
+
+      # - name: Run Gemini Code Review
+      #   uses: actions/github-script@v7
+      #   env:
+      #     GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      #     FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+      #   with:
+      #     script: |
+      #       const { runReview } = require('.github/scripts/ai-review.js');
+      #       await runReview(context, github, process.env);
