@@ -15,9 +15,9 @@ on:
 jobs:
   gemini:
     if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/review')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review'))
+      (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/review') && github.event.issue.user.login != 'dependabot[bot]') ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review') && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,6 +42,7 @@ jobs:
           FILES: ${{ steps.changed-files.outputs.all_changed_files }}
         with:
           script: |
+            const { execSync } = require('child_process');
             const fs = require('fs');
 
             const changedFiles = process.env.FILES
@@ -52,18 +53,19 @@ jobs:
 
             for (const file of changedFiles) {
               try {
-                const content = fs.readFileSync(file, 'utf8');
+                // Get git diff for only changed lines instead of full file
+                const diff = execSync(`git diff HEAD -- ${file}`, { encoding: 'utf8' });
 
                 fileContents += `
                 ====================================
                 FILE: ${file}
                 ====================================
 
-                ${content}
+                ${diff}
                 `;
 
               } catch (e) {
-                console.log(`Skipping unreadable file: ${file}`);
+                console.log(`Skipping file with no diff: ${file}`);
               }
             }
 
@@ -91,7 +93,7 @@ jobs:
               CHANGED FILES:
               ${changedFiles.join('\n')}
 
-              FILE CONTENTS:
+              GIT DIFFS (only changed lines):
               ${fileContents}
 
               OUTPUT FORMAT (strict JSON):
@@ -116,8 +118,12 @@ jobs:
               - Be direct and actionable
             `;
 
+            // Estimate token count (rough approximation: 1 token ≈ 4 characters)
+            const estimatedTokens = Math.ceil(prompt.length / 4);
+            console.log(`Estimated input tokens: ${estimatedTokens}`);
+
             // Retry logic with exponential backoff
-            const maxRetries = 10;
+            const maxRetries = 3;
             const initialDelay = 2000;
             let retryCount = 0;
             let data;
@@ -160,7 +166,7 @@ jobs:
                         temperature: 0.3,
                         topP: 0.9,
                         topK: 20,
-                        maxOutputTokens: 65536
+                        maxOutputTokens: 8192
                       }
                     })
                   }
