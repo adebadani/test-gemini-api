@@ -269,13 +269,28 @@ function buildReviewComments(reviewData) {
  */
 async function runReview(context, github, env) {
   const changedFiles = env.FILES.split(' ').filter(Boolean);
-  const baseBranch = context.payload.pull_request?.base?.ref || 'main';
+  let baseBranch = context.payload.pull_request?.base?.ref || 'main';
   const repository = context.payload.repository?.full_name || 'unknown';
   const prNumber = getPRNumber(context);
 
   console.log('Event name:', context.event_name);
   console.log('Payload keys:', Object.keys(context.payload));
   console.log('Determined PR number:', prNumber);
+
+  // TODO: remove pull_request_review check
+  if ((context.event_name === 'issue_comment' || context.event_name === 'pull_request_review') && prNumber && !context.payload.pull_request) {
+    try {
+      const pr = await github.rest.pulls.get({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        pull_number: prNumber
+      });
+      baseBranch = pr.data.base.ref;
+      console.log(`Fetched base branch from PR: ${baseBranch}`);
+    } catch (e) {
+      console.log('Failed to fetch PR details, using default base branch');
+    }
+  }
 
   // Get file diffs
   const fileContents = getFileDiffs(changedFiles, baseBranch);
@@ -287,8 +302,8 @@ async function runReview(context, github, env) {
   const estimatedTokens = Math.ceil(prompt.length / 4);
   console.log(`Estimated input tokens: ${estimatedTokens}`);
 
-  // Call Gemini API
-  const reviewText = await callGeminiAPI(prompt, env.GEMINI_API_KEY);
+  // TODO: uncomment when ready
+  // const reviewText = await callGeminiAPI(prompt, env.GEMINI_API_KEY);
 
   // Parse response
   const reviewData = parseReviewResponse(reviewText);
