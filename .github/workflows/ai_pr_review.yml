@@ -31,9 +31,40 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Get PR details
+        id: pr-details
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let prNumber;
+            if (context.payload.pull_request?.number) {
+              prNumber = context.payload.pull_request.number;
+            } else if (context.payload.number) {
+              prNumber = context.payload.number;
+            } else if (context.payload.issue?.number) {
+              prNumber = context.payload.issue.number;
+            }
+            
+            if (prNumber) {
+              const pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              console.log(`PR #${prNumber}: base=${pr.data.base.sha}, head=${pr.data.head.sha}`);
+              return {
+                base_sha: pr.data.base.sha,
+                sha: pr.data.head.sha
+              };
+            }
+            return {};
+
       - name: Get changed files
         id: changed-files
         uses: tj-actions/changed-files@v45
+        with:
+          base_sha: ${{ steps.pr-details.outputs.base_sha }}
+          sha: ${{ steps.pr-details.outputs.sha }}
 
       - name: Run Gemini Code Review
         uses: actions/github-script@v7
