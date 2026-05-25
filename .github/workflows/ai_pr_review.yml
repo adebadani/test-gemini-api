@@ -5,19 +5,12 @@
 name: PR – Check Gemini
 
 on:
-  pull_request:
-    types: [opened]
-  pull_request_review:
-    types: [submitted]
   issue_comment:
     types: [created]
 
 jobs:
   gemini:
-    if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]') ||
-      (github.event.issue.pull_request && (github.event.comment.body == '/build') && github.event.comment.user.login != 'dependabot[bot]') ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review') && github.event.pull_request.user.login != 'dependabot[bot]')
+    if: ${{ github.event.issue.pull_request && github.event.comment.body == '/review' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,7 +29,6 @@ jobs:
           echo "Event name: ${{ github.event_name }}"
           echo "Event action: ${{ github.event.action }}"
           echo "Event issue number: ${{ github.event.issue.number }}"
-          echo "Event pull request number: ${{ github.event.pull_request.number }}"
           echo "Event comment body: ${{ github.event.comment.body }}"
           echo "Event comment user login: ${{ github.event.comment.user.login }}"
 
