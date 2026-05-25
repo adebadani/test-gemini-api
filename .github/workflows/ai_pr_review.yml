@@ -15,9 +15,11 @@ on:
 jobs:
   gemini:
     if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]') ||
-      (github.event.issue.pull_request && contains(github.event.comment.body, '/review') && github.event.comment.user.login != 'dependabot[bot]') ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review') && github.event.pull_request.user.login != 'dependabot[bot]')
+      github.actor != 'dependabot[bot]' && (
+        (github.event_name == 'pull_request') ||
+        (github.event.issue.pull_request && contains(github.event.comment.body, '/review')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review'))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,10 +32,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: debug
+      
+      - name: Debug PR details
         run: |
-          echo "PR user: ${{ toJson(github.event.pull_request.user) }}"
+          echo "Actor: ${{ github.actor }}"
+
       - name: Get PR details
         id: pr-details
         uses: actions/github-script@v7
