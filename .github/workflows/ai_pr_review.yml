@@ -9,6 +9,8 @@ on:
     types: [opened]
   pull_request_review:
     types: [submitted]
+  pull_request_review_comment:
+    types: [created]
   issue_comment:
     types: [created]
 
@@ -17,7 +19,8 @@ jobs:
     if: |
       (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]') ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/review') && github.event.comment.user.login != 'dependabot[bot]') ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review') && github.event.pull_request.user.login != 'dependabot[bot]')
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '/review') && github.event.pull_request.user.login != 'dependabot[bot]') ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '/review') && github.event.comment.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     permissions:
       contents: read
