@@ -277,8 +277,8 @@ async function runReview(context, github, env) {
   console.log('Payload keys:', Object.keys(context.payload));
   console.log('Determined PR number:', prNumber);
 
-  // TODO: remove pull_request_review check
-  if ((context.event_name === 'issue_comment' || context.event_name === 'pull_request_review') && prNumber && !context.payload.pull_request) {
+  // If triggered from issue_comment, fetch PR details to get base branch
+  if (context.event_name === 'issue_comment' && prNumber && !context.payload.pull_request) {
     try {
       const pr = await github.rest.pulls.get({
         owner: context.repo.owner,
@@ -302,8 +302,8 @@ async function runReview(context, github, env) {
   const estimatedTokens = Math.ceil(prompt.length / 4);
   console.log(`Estimated input tokens: ${estimatedTokens}`);
 
-  // TODO: uncomment when ready
-  // const reviewText = await callGeminiAPI(prompt, env.GEMINI_API_KEY);
+  // Call Gemini API
+  const reviewText = await callGeminiAPI(prompt, env.GEMINI_API_KEY);
 
   // Parse response
   const reviewData = parseReviewResponse(reviewText);
