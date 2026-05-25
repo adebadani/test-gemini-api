@@ -129,7 +129,7 @@ async function callGeminiAPI(prompt, apiKey) {
               temperature: 0.3,
               topP: 0.9,
               topK: 20,
-              maxOutputTokens: 8192
+              maxOutputTokens: 32768
             }
           })
         }
@@ -188,8 +188,30 @@ function parseReviewResponse(reviewText) {
   try {
     return JSON.parse(jsonText);
   } catch (e) {
-    console.log('Failed to parse JSON, raw response:', jsonText);
-    throw new Error('Failed to parse Gemini response as JSON');
+    // Try to handle incomplete JSON by finding the last complete object
+    console.log('Failed to parse JSON, attempting to recover from truncated response');
+    
+    // Try to find the last complete "issues" array entry
+    const lastBraceIndex = jsonText.lastIndexOf('}');
+    if (lastBraceIndex > 0) {
+      const lastClosingBracket = jsonText.lastIndexOf(']');
+      if (lastClosingBracket > 0) {
+        // Try to reconstruct the JSON by closing the array and object
+        const reconstructed = jsonText.substring(0, lastClosingBracket + 1) + '\n}';
+        try {
+          const parsed = JSON.parse(reconstructed);
+          console.log('Successfully parsed truncated JSON');
+          return parsed;
+        } catch (e2) {
+          console.log('Reconstruction failed, trying alternative method');
+        }
+      }
+    }
+    
+    console.log('Failed to parse JSON, raw response length:', jsonText.length);
+    console.log('Raw response (first 500 chars):', jsonText.substring(0, 500));
+    console.log('Raw response (last 500 chars):', jsonText.substring(Math.max(0, jsonText.length - 500)));
+    throw new Error('Failed to parse Gemini response as JSON - response may be truncated');
   }
 }
 
