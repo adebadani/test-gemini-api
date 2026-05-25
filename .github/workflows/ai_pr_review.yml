@@ -10,7 +10,7 @@ on:
 
 jobs:
   gemini:
-    if: ${{ github.event.issue.pull_request && github.event.comment.body == '/review' }}
+    if: ${{ github.event.issue.pull_request && github.event.comment.body == '/build' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
