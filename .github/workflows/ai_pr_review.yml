@@ -30,7 +30,7 @@ jobs:
       
       - name: Debug
         run: |
-          echo "PR data: ${{ github.event.pull_request }}"
+          echo "PR data: ${{ toJSON(github.event.pull_request) }}"
 
       - name: Get PR details
         id: pr-details
