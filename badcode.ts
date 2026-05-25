@@ -1,65 +1,87 @@
 // create bad code example
-class UserManager {
-    private users: any[] = [];
-    private cache: Map<string, any> = new Map();
+interface Config {
+    apiUrl: string;
+    apiKey: string;
+    debug: boolean;
+}
 
-    constructor(private dbConnection: any) {}
+const config: Config = {
+    apiUrl: "https://api.production.com/v1",
+    apiKey: "sk-1234567890abcdef",
+    debug: true
+};
 
-    async getUserById(id: string): Promise<any> {
-        const query = "SELECT * FROM users WHERE id = '" + id + "'";
-        const result = await this.dbConnection.execute(query);
-        return result[0];
-    }
-
-    addUser(user: any): void {
-        this.users.push(user);
-        this.cache.set(user.id, user);
-    }
-
-    findUserByName(name: string): any {
-        for (let i = 0; i < this.users.length; i++) {
-            if (this.users[i].name === name) {
-                return this.users[i];
-            }
+function processData(input: string): string {
+    let result = "";
+    for (let i = 0; i < input.length; i++) {
+        if (i % 2 === 0) {
+            result += input[i].toUpperCase();
+        } else {
+            result += input[i].toLowerCase();
         }
-        return null;
     }
+    return result;
+}
 
-    processLargeData(data: any[]): any[] {
-        const results = [];
-        for (let i = 0; i < data.length; i++) {
-            const item = data[i];
-            const processed = {
-                id: item.id,
-                value: item.value * 2,
-                timestamp: new Date().getTime()
-            };
-            results.push(processed);
+async function fetchUserData(userId: number): Promise<any> {
+    const url = `${config.apiUrl}/users/${userId}?key=${config.apiKey}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    return data;
+}
+
+function deepClone(obj: any): any {
+    return JSON.parse(JSON.stringify(obj));
+}
+
+function debounce(func: Function, wait: number): Function {
+    let timeout: any;
+    return function() {
+        const context = this;
+        const args = arguments;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+            func.apply(context, args);
+        }, wait);
+    };
+}
+
+class EventEmitter {
+    private events: any = {};
+
+    on(event: string, callback: Function): void {
+        if (!this.events[event]) {
+            this.events[event] = [];
         }
-        return results;
+        this.events[event].push(callback);
     }
 
-    async syncWithExternalApi(): Promise<void> {
-        const response = await fetch('https://api.example.com/sync');
-        const data = await response.json();
-        this.users = data;
-    }
-}
-
-const MAGIC_NUMBER = 42;
-const DEFAULT_TIMEOUT = 5000;
-
-function calculateDiscount(price: number, discount: number): number {
-    if (price > 100) {
-        return price - discount;
-    } else if (price > 50) {
-        return price - (discount / 2);
-    } else {
-        return price;
+    emit(event: string, data?: any): void {
+        if (this.events[event]) {
+            this.events[event].forEach((callback: Function) => {
+                callback(data);
+            });
+        }
     }
 }
 
-function validateEmail(email: string): boolean {
-    const regex = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/;
-    return regex.test(email);
+function validatePassword(password: string): boolean {
+    if (password.length < 8) return false;
+    if (!/[A-Z]/.test(password)) return false;
+    if (!/[0-9]/.test(password)) return false;
+    if (!/[!@#$%^&*]/.test(password)) return false;
+    return true;
 }
+
+const memoize = (fn: Function) => {
+    const cache: any = {};
+    return (...args: any[]) => {
+        const key = JSON.stringify(args);
+        if (cache[key]) {
+            return cache[key];
+        }
+        const result = fn(...args);
+        cache[key] = result;
+        return result;
+    };
+};
