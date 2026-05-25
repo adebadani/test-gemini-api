@@ -1,8 +1,8 @@
 // create bad code example
-const password = "admin123";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 
 function validateUser(username: string, password: string): boolean {
-    if (username === "admin" && password === "admin123") {
+    if (username === "admin" && password === ADMIN_PASSWORD) {
         return true;
     }
     return false;
