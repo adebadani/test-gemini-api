@@ -29,7 +29,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Get changed files
         id: changed-files
@@ -53,8 +53,9 @@ jobs:
 
             for (const file of changedFiles) {
               try {
-                // Get git diff for only changed lines instead of full file
-                const diff = execSync(`git diff HEAD -- ${file}`, { encoding: 'utf8' });
+                // Get git diff for all changes in PR (compare with base branch)
+                const baseBranch = context.payload.pull_request?.base?.ref || 'main';
+                const diff = execSync(`git diff origin/${baseBranch}...HEAD -- ${file}`, { encoding: 'utf8' });
 
                 fileContents += `
                 ====================================
@@ -285,6 +286,12 @@ jobs:
 
             // Create a Pull Request Review with inline comments
             if (prNumber) {
+              // Skip review if no issues found
+              if (comments.length === 0 && generalComments.length === 0) {
+                console.log('No issues found, skipping review creation');
+                return;
+              }
+
               const reviewBody = generalComments.length > 0 ? generalComments.join('\n\n---\n\n') : '';
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
