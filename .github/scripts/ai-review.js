@@ -27,7 +27,7 @@ function getFileDiffs(changedFiles, baseBranch) {
 }
 
 /**
- * Build the prompt for Gemini API
+ * Build the prompt for OpenAI API
  */
 function buildPrompt(repository, prNumber, changedFiles, fileContents) {
   return `
@@ -83,23 +83,19 @@ function buildPrompt(repository, prNumber, changedFiles, fileContents) {
 /**
  * Parse retry delay from API error response
  */
-function parseRetryDelay(errorDetails) {
-  if (!errorDetails) return null;
-  for (const detail of errorDetails) {
-    if (detail.retryDelay) {
-      const match = detail.retryDelay.match(/(\d+)/);
-      if (match) {
-        return parseInt(match[1]) * 1000;
-      }
-    }
+function parseRetryDelay(errorHeaders) {
+  if (!errorHeaders) return null;
+  const retryAfter = errorHeaders['retry-after'] || errorHeaders['Retry-After'];
+  if (retryAfter) {
+    return parseInt(retryAfter) * 1000;
   }
   return null;
 }
 
 /**
- * Call Gemini API with retry logic
+ * Call OpenAI API with retry logic
  */
-async function callGeminiAPI(prompt, apiKey) {
+async function callOpenAIAPI(prompt, apiKey) {
   const maxRetries = 3;
   const initialDelay = 2000;
   let retryCount = 0;
@@ -109,40 +105,36 @@ async function callGeminiAPI(prompt, apiKey) {
   while (retryCount < maxRetries) {
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        'https://api.openai.com/v1/chat/completions',
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
           },
           body: JSON.stringify({
-            contents: [
+            model: 'gpt-4o',
+            messages: [
               {
-                parts: [
-                  {
-                    text: prompt
-                  }
-                ]
+                role: 'user',
+                content: prompt
               }
             ],
-            generationConfig: {
-              temperature: 0.3,
-              topP: 0.9,
-              topK: 20,
-              maxOutputTokens: 32768
-            }
+            temperature: 0.3,
+            top_p: 0.9,
+            max_tokens: 32768
           })
         }
       );
 
       data = await response.json();
 
-      if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      if (response.ok && data.choices?.[0]?.message?.content) {
         break;
       }
 
       if (response.status === 429) {
-        const apiDelay = parseRetryDelay(data?.error?.details);
+        const apiDelay = parseRetryDelay(response.headers);
         const exponentialDelay = initialDelay * Math.pow(2, retryCount);
         const delayMs = apiDelay || exponentialDelay;
         console.log(`Quota exceeded. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
@@ -153,7 +145,7 @@ async function callGeminiAPI(prompt, apiKey) {
       }
 
       console.log(JSON.stringify(data, null, 2));
-      throw new Error(`Invalid Gemini response: ${data.error?.message || 'Unknown error'}`);
+      throw new Error(`Invalid OpenAI response: ${data.error?.message || 'Unknown error'}`);
 
     } catch (error) {
       if (retryCount < maxRetries - 1) {
@@ -168,16 +160,16 @@ async function callGeminiAPI(prompt, apiKey) {
     }
   }
 
-  if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+  if (!data.choices?.[0]?.message?.content) {
     console.log(JSON.stringify(data, null, 2));
-    throw new Error(`Invalid Gemini response after ${maxRetries} retries. Last error: ${lastError}`);
+    throw new Error(`Invalid OpenAI response after ${maxRetries} retries. Last error: ${lastError}`);
   }
 
-  return data.candidates[0].content.parts[0].text;
+  return data.choices[0].message.content;
 }
 
 /**
- * Parse JSON response from Gemini
+ * Parse JSON response from OpenAI
  */
 function parseReviewResponse(reviewText) {
   let jsonText = reviewText.trim();
@@ -211,7 +203,7 @@ function parseReviewResponse(reviewText) {
     console.log('Failed to parse JSON, raw response length:', jsonText.length);
     console.log('Raw response (first 500 chars):', jsonText.substring(0, 500));
     console.log('Raw response (last 500 chars):', jsonText.substring(Math.max(0, jsonText.length - 500)));
-    throw new Error('Failed to parse Gemini response as JSON - response may be truncated');
+    throw new Error('Failed to parse OpenAI response as JSON - response may be truncated');
   }
 }
 
@@ -302,8 +294,8 @@ async function runReview(context, github, env) {
   const estimatedTokens = Math.ceil(prompt.length / 4);
   console.log(`Estimated input tokens: ${estimatedTokens}`);
 
-  // Call Gemini API
-  const reviewText = await callGeminiAPI(prompt, env.GEMINI_API_KEY);
+  // Call OpenAI API
+  const reviewText = await callOpenAIAPI(prompt, env.OPENAI_API_KEY);
 
   // Parse response
   const reviewData = parseReviewResponse(reviewText);
