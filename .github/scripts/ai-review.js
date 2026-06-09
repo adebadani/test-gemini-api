@@ -120,7 +120,6 @@ async function callOpenAIAPI(prompt, apiKey) {
                 content: prompt
               }
             ],
-            temperature: 0.3,
             max_completion_tokens: 32768
           })
         }
