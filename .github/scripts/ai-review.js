@@ -120,7 +120,7 @@ async function callOpenAIAPI(prompt, apiKey) {
                 content: prompt
               }
             ],
-            max_completion_tokens: 32768
+            max_completion_tokens: 16384
           })
         }
       );
