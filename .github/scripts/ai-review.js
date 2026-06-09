@@ -83,11 +83,11 @@ function buildPrompt(repository, prNumber, changedFiles, fileContents) {
 /**
  * Parse retry delay from API error response
  */
-function parseRetryDelay(errorHeaders) {
-  if (!errorHeaders) return null;
-  const retryAfter = errorHeaders['retry-after'] || errorHeaders['Retry-After'];
-  if (retryAfter) {
-    return parseInt(retryAfter) * 1000;
+function parseRetryDelay(error) {
+  if (!error) return null;
+  // OpenAI may provide retry_after in error headers or body
+  if (error.retry_after) {
+    return error.retry_after * 1000;
   }
   return null;
 }
@@ -105,7 +105,7 @@ async function callOpenAIAPI(prompt, apiKey) {
   while (retryCount < maxRetries) {
     try {
       const response = await fetch(
-        'https://api.openai.com/v1/chat/completions',
+        `https://api.openai.com/v1/chat/completions`,
         {
           method: 'POST',
           headers: {
@@ -113,7 +113,7 @@ async function callOpenAIAPI(prompt, apiKey) {
             'Authorization': `Bearer ${apiKey}`
           },
           body: JSON.stringify({
-            model: 'gpt-4o',
+            model: 'gpt-5',
             messages: [
               {
                 role: 'user',
@@ -121,7 +121,6 @@ async function callOpenAIAPI(prompt, apiKey) {
               }
             ],
             temperature: 0.3,
-            top_p: 0.9,
             max_tokens: 32768
           })
         }
@@ -134,7 +133,7 @@ async function callOpenAIAPI(prompt, apiKey) {
       }
 
       if (response.status === 429) {
-        const apiDelay = parseRetryDelay(response.headers);
+        const apiDelay = parseRetryDelay(data?.error);
         const exponentialDelay = initialDelay * Math.pow(2, retryCount);
         const delayMs = apiDelay || exponentialDelay;
         console.log(`Quota exceeded. Retrying in ${delayMs/1000}s (attempt ${retryCount + 1}/${maxRetries})`);
