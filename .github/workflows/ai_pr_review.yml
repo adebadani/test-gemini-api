@@ -2,7 +2,7 @@
 # type:    check
 # trigger: issue_comment, pull_request_review_comment, issues, pull_request_review
 # paths:   - (global)
-name: PR – Check Gemini
+name: PR – Check OpenAI
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ on:
     types: [created]
 
 jobs:
-  gemini:
+  openai:
     if: |
       github.actor != 'dependabot[bot]' && (
         (github.event_name == 'pull_request') ||
@@ -68,10 +68,10 @@ jobs:
           base_sha: ${{ steps.pr-details.outputs.base_sha }}
           sha: ${{ steps.pr-details.outputs.sha }}
 
-      - name: Run Gemini Code Review
+      - name: Run OpenAI Code Review
         uses: actions/github-script@v7
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           FILES: ${{ steps.changed-files.outputs.all_changed_files }}
         with:
           script: |
